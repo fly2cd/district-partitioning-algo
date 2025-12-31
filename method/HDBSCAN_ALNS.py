@@ -1,16 +1,6 @@
 
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import numpy as np
 
-from method.balance_kmeans import CBalanceKmeans
-from method.bkmeans import BKMeans
-from tool.file_io import read_block_data
-from tool.visualization import KMeansVisualizer
-from sklearn.cluster import OPTICS
-import matplotlib.cm as cm
-from hdbscan import HDBSCAN
-from sklearn.neighbors import KernelDensity
+
 
 class DistrictPartition:
     def __init__(self, poi_raw_gdf, block_raw_gdf, **kwargs):
@@ -18,7 +8,7 @@ class DistrictPartition:
         self.block_raw_gdf = block_raw_gdf
         self.params = kwargs
         self.bkm_params = self.params.get("bkm_params")
-        self.num_clusters = self.bkm_params.get("numClusters")
+        self.num_clusters = bkm_params.get("numClusters")
 
     def preprocess(self):
         # 获取交集，主要是通过block对poi进行过滤
@@ -303,7 +293,7 @@ class DistrictPartition:
         ax.set_title('District Partition Result')
         ax.set_axis_off()
         ax.legend()
-        plt.show()
+        safe_show(plt)
 
     def plot_boundary_blocks_and_lines(self, ax=None):
         """
@@ -363,7 +353,7 @@ class DistrictPartition:
         ax.set_title('Boundary Blocks and Cluster Boundaries')
         ax.set_axis_off()
         ax.legend()
-        plt.show()
+        safe_show(plt)
 
     def plot_swap_comparison(self, before_block_gdf=None):
         """
@@ -409,212 +399,5 @@ class DistrictPartition:
         ax2.set_title('After swap_block_unit')
         ax2.set_axis_off()
         plt.tight_layout()
-        plt.show()
+        safe_show(plt)
 
-class OpticsClutering:
-    def __init__(self, poi_gdf, min_samples=5, xi=0.05, min_cluster_size=0.05):
-        self.poi_gdf = poi_gdf.copy()
-        self.min_samples = min_samples
-        self.xi = xi
-        self.min_cluster_size = min_cluster_size
-        self.labels_ = None
-
-    def clustering(self):
-        """
-        对poi_gdf进行OPTICS聚类分析，结果写入self.poi_gdf['optics_label']
-        """
-        coords = np.array([[geom.x, geom.y] for geom in self.poi_gdf.geometry])
-        optics = OPTICS(min_samples=self.min_samples, xi=self.xi, min_cluster_size=self.min_cluster_size)
-        optics.fit(coords)
-        self.labels_ = optics.labels_
-        self.poi_gdf['optics_label'] = self.labels_
-        return self.poi_gdf
-
-    def visual_result(self, ax=None):
-        """
-        可视化OPTICS聚类结果
-        """
-        import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
-        if ax is None:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        if 'optics_label' not in self.poi_gdf.columns:
-            print('请先运行clustering方法')
-            return
-        labels = self.poi_gdf['optics_label']
-        unique_labels = np.unique(labels)
-        colors = cm.get_cmap('tab20', len(unique_labels))
-        for i, label in enumerate(unique_labels):
-            mask = (labels == label)
-            ax.scatter(self.poi_gdf.geometry.x[mask], self.poi_gdf.geometry.y[mask],
-                       s=10, color=colors(i), label=f'Cluster {label}' if label != -1 else 'Noise', alpha=0.7)
-        ax.set_title('OPTICS Clustering Result')
-        ax.set_axis_off()
-        ax.legend()
-        plt.show()
-
-class HdbscanClustering:
-    def __init__(self, poi_gdf, min_samples=5, min_cluster_size=5):
-        self.poi_gdf = poi_gdf.copy()
-        self.min_samples = min_samples
-        self.min_cluster_size = min_cluster_size
-        self.labels_ = None
-
-    def clustering(self):
-        """
-        对poi_gdf进行HDBSCAN聚类分析，结果写入self.poi_gdf['hdbscan_label']
-        """
-        coords = np.array([[geom.x, geom.y] for geom in self.poi_gdf.geometry])
-        hdb = HDBSCAN(min_samples=self.min_samples, min_cluster_size=self.min_cluster_size)
-        hdb.fit(coords)
-        self.labels_ = hdb.labels_
-        self.poi_gdf['hdbscan_label'] = self.labels_
-        return self.poi_gdf
-
-    def visual_result(self, ax=None):
-        """
-        可视化HDBSCAN聚类结果
-        """
-        import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
-        if ax is None:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        if 'hdbscan_label' not in self.poi_gdf.columns:
-            print('请先运行clustering方法')
-            return
-        labels = self.poi_gdf['hdbscan_label']
-        unique_labels = np.unique(labels)
-        colors = cm.get_cmap('tab20', len(unique_labels))
-        for i, label in enumerate(unique_labels):
-            mask = (labels == label)
-            ax.scatter(self.poi_gdf.geometry.x[mask], self.poi_gdf.geometry.y[mask],
-                       s=10, color=colors(i), label=f'Cluster {label}' if label != -1 else 'Noise', alpha=0.7)
-        ax.set_title('HDBSCAN Clustering Result')
-        ax.set_axis_off()
-        ax.legend()
-        plt.show()
-
-class KernelAnalysis:
-    def __init__(self, poi_gdf, bandwidth=0.01, kernel='gaussian'):
-        self.poi_gdf = poi_gdf.copy()
-        self.bandwidth = bandwidth
-        self.kernel = kernel
-        self.kde = None
-        self.density_ = None
-
-    def fit(self):
-        """
-        对poi_gdf进行核密度估计，结果写入self.density_（每个点的密度值）
-        """
-        coords = np.array([[geom.x, geom.y] for geom in self.poi_gdf.geometry])
-        self.kde = KernelDensity(bandwidth=self.bandwidth, kernel=self.kernel)
-        self.kde.fit(coords)
-        log_density = self.kde.score_samples(coords)
-        self.density_ = np.exp(log_density)
-        self.poi_gdf['kde_density'] = self.density_
-        return self.poi_gdf
-
-    def extract_hotspots(self, quantile=0.95):
-        """
-        提取热点区域（密度高于指定分位数的点），并生成热点编号
-        :param quantile: 分位数阈值（如0.95表示前5%高密度为热点）
-        """
-        if 'kde_density' not in self.poi_gdf.columns:
-            raise ValueError("请先运行fit方法")
-        threshold = np.quantile(self.poi_gdf['kde_density'], quantile)
-        self.poi_gdf['is_hotspot'] = self.poi_gdf['kde_density'] >= threshold
-        # 给热点点分组编号（可用DBSCAN等空间聚类，也可直接编号）
-        from sklearn.cluster import DBSCAN
-        coords = np.array([[geom.x, geom.y] for geom in self.poi_gdf[self.poi_gdf['is_hotspot']].geometry])
-        if len(coords) > 0:
-            db = DBSCAN(eps=self.bandwidth*2, min_samples=3).fit(coords)
-            self.poi_gdf.loc[self.poi_gdf['is_hotspot'], 'hotspot_id'] = db.labels_
-        else:
-            self.poi_gdf['hotspot_id'] = -1
-        return self.poi_gdf
-
-    def visual_result(self, ax=None, cmap='hot', show_hotspot=True):
-        """
-        可视化核密度分析结果（点密度热力图）
-        """
-        import matplotlib.pyplot as plt
-        if ax is None:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        if 'kde_density' not in self.poi_gdf.columns:
-            print('请先运行fit方法')
-            return
-        sc = ax.scatter(self.poi_gdf.geometry.x, self.poi_gdf.geometry.y,
-                        c=self.poi_gdf['kde_density'], cmap=cmap, s=15, alpha=0.8)
-        plt.colorbar(sc, ax=ax, label='Density')
-        if show_hotspot and 'is_hotspot' in self.poi_gdf.columns:
-            # 高亮热点
-            hs = self.poi_gdf[self.poi_gdf['is_hotspot']]
-            ax.scatter(hs.geometry.x, hs.geometry.y, c='cyan', s=30, edgecolor='k', label='Hotspot')
-            # 标注热点编号
-            if 'hotspot_id' in hs.columns:
-                for hid in hs['hotspot_id'].unique():
-                    if hid == -1: continue
-                    sub = hs[hs['hotspot_id'] == hid]
-                    # 标注热点中心
-                    x, y = sub.geometry.x.mean(), sub.geometry.y.mean()
-                    ax.text(x, y, f'Hotspot {int(hid)}', color='blue', fontsize=12, weight='bold')
-        ax.set_title('Kernel Density Estimation (KDE) with Hotspots')
-        ax.set_axis_off()
-        ax.legend()
-        plt.show()
-
-def execute_kernel(poi_raw_file, arg_dict):
-    poi_raw_gpd = gpd.read_file(poi_raw_file)
-    ka = KernelAnalysis(poi_raw_gpd, **arg_dict)
-    ka.fit()
-    ka.extract_hotspots(quantile=0.8)
-    ka.visual_result()
-
-def execute(poi_raw_file, block_raw_file, arg_dict):
-    # step1. 数据预处理, 建立poi和block映射关系，剔除非配送点
-    poi_raw_gpd = gpd.read_file(poi_raw_file)
-    block_raw_gpd = read_block_data(block_raw_file, -1)
-    print(f'block总数为{len(block_raw_gpd)}')
-    dp = DistrictPartition(poi_raw_gpd, block_raw_gpd, **arg_dict)
-    dp.solve()
-    dp.visualize()
-
-def execute_optics(poi_raw_file, arg_dict):
-    poi_raw_gpd = gpd.read_file(poi_raw_file)
-    oc = OpticsClutering(poi_raw_gpd, **arg_dict)
-    oc.clustering()
-    oc.visual_result()
-
-def execute_hdbscan(poi_raw_file, arg_dict):
-    poi_raw_gpd = gpd.read_file(poi_raw_file)
-    hc = HdbscanClustering(poi_raw_gpd, **arg_dict)
-    hc.clustering()
-    hc.visual_result()
-
-
-
-
-
-if __name__ == '__main__':
-    poi_raw_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/poi_mct.shp'
-    # block_raw_file = 'data/block_raw.shp'
-    optics_arg_dict = {
-        'min_samples': 5,
-        'xi': 0.05,
-        'min_cluster_size': 0.1
-    }
-
-    hdbscan_arg_dict = {
-        'min_samples': 5,
-        'min_cluster_size': 15
-    }
-
-    kernel_arg_dict = {
-        'bandwidth': 200,
-        'kernel': 'gaussian'
-    }
-
-
-    # execute_optics(poi_raw_file, optics_arg_dict)
-    # execute_hdbscan(poi_raw_file, hdbscan_arg_dict)
-    execute_kernel(poi_raw_file, kernel_arg_dict)

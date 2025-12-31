@@ -14,12 +14,13 @@ https://github.com/uef-machine-learning/Balanced_k-Means_Revisited.git
 2.执行该脚本前，需要在本地对源文件进行编译，cd到SoftBKmeans目录进行make
 3.按要求准备参数，启动可执行文件，得到最终结果
 '''
+RELATIVE_PATH = r'D:\IdeaProjects\district-partitioning-algo\data'
 
 # 以下为执行路径、过程数据和最终数据文件
-excuteable_path = '/Users/chendi/IdeaProjects/Balanced_k-Means_Revisited/SoftBKmeans/bkmeans'
-_data_path = '/Users/chendi/IdeaProjects/regionOpt/data/coordinates.txt'
-_label_path = '/Users/chendi/IdeaProjects/regionOpt/data/labels.pa'
-_centroid_path = '/Users/chendi/IdeaProjects/regionOpt/data/centroids.txt'
+excuteable_path = r'D:\Projects\Balanced_k-Means_Revisited-main\x64\Debug\SoftBKmeans.exe'
+_data_path = RELATIVE_PATH+'/coordinates.txt'
+_label_path = RELATIVE_PATH+'/labels.pa'
+_centroid_path = RELATIVE_PATH+'/centroids.txt'
 
 class CBalanceKmeans:
     def __init__(self, poi_gdf, num_cluster=2, max_diff_ratio=5):
@@ -99,10 +100,10 @@ class CBalanceKmeans:
 
 
 if __name__ == '__main__':
-    shp_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/poi_mct.shp'
-    block_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/block_mct.shp'
-    poi_result_file = "/Users/chendi/IdeaProjects/regionOpt/data/shp/poi_labels.shp"
-    block_result_file= "/Users/chendi/IdeaProjects/regionOpt/data/shp/block_labels.shp"
+    shp_file = RELATIVE_PATH+'/shp/poi_mct.shp'
+    block_file = RELATIVE_PATH+'/shp/block_mct.shp'
+    poi_result_file = RELATIVE_PATH+'/shp/poi_labels.shp'
+    block_result_file = RELATIVE_PATH+'/shp/block_labels.shp'
 
 
     poi_gdf = read_poi_data(shp_file)

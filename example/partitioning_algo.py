@@ -2,22 +2,21 @@ from enum import Enum
 import random as rd
 
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import ListedColormap
 from scipy.stats import alpha
 from sklearn.cluster import KMeans
 
 from method.balance_kmeans import CBalanceKmeans
 from method.bkmeans import BKMeans
 from tool.Basic import Point
+from tool.file_io import read_poi_data, read_block_data, ALL_POLYGON
 import method.TSP as tsp
-from tool.visualization import KMeansVisualizer
-
-NORMAL_POLYGON = 1
-UNNORMAL_POLYGON = 2
-ALL_POLYGON = -1
+from tool.visualization import (
+    KMeansVisualizer, safe_show, routes_plot, visual_tsp_result,
+    plot_single_solution, plot_depot_effect, plot_district_partition,
+    plot_boundary_blocks_and_lines, plot_swap_comparison
+)
 
 
 class DepotLoc(Enum):
@@ -26,40 +25,12 @@ class DepotLoc(Enum):
     RANDOM = 3
 
 
-def read_poi_data(shp_file):
-    gdf_ori = gpd.read_file(shp_file)
-    depot_gdf = gdf_ori[gdf_ori['delivery_o'] == 111]
-    depot_poi = Point(0, depot_gdf.iloc[0].geometry.x,
-                      depot_gdf.iloc[0].geometry.y) if depot_gdf.empty is False else None
-    poi_gdf = gdf_ori[gdf_ori['delivery_o'] != 111]
-    return poi_gdf, depot_poi
-
-
-def read_block_data(shp_file, id):
-    gdf_ori = gpd.read_file(shp_file)
-    if id is not ALL_POLYGON:
-        block_gdf = gdf_ori[gdf_ori['Id'] == id]
-        return block_gdf
-    return gdf_ori
-
-
 def cluster(gdf, num_clusters):
     coordinates = np.array(list(gdf.geometry.apply(lambda geom: (geom.x, geom.y))))
     kmeans = KMeans(n_cluster=num_clusters)
     gdf['cluster'] = kmeans.fit_predict(coordinates)
     print(gdf.head(5))
     return gdf
-
-
-def balance_cluster(poi_gdf, num_clusters, maxdiff):
-    cmd_args = balKmeans.initalize(poi_gdf, num_clusters, maxdiff)
-    print(cmd_args)
-
-    balKmeans.excute_balance_cluster(cmd_args)
-    poi_gdf = balKmeans.post_process(poi_gdf)
-
-    return poi_gdf
-
 
 def tsp_solver(gdf, depot=None):
     points_list = []
@@ -79,17 +50,7 @@ def tsp_solver(gdf, depot=None):
     return route, poi_id_dict
 
 
-def routesPlot(routes, ax):
-    colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-
-    for idx, route in enumerate(routes):
-        x = []
-        y = []
-        for point in route:
-            x.append(point.x)
-            y.append(point.y)
-        ax.scatter(x, y)
-        ax.plot(x, y, color=colors[idx % len(colors)])
+# routesPlot 函数已移至 tool/visualization.py，使用 routes_plot 替代
 
 
 def cal_solution(gdf_cluster, depot_poi, label_filed='cluster'):
@@ -142,41 +103,12 @@ def depot_loc_center_vs_boundary(poi_gdf):
     return routes_b, routes_c
 
 
-def plot_single_solution(block_gdf, routes):
-    fig, ax = plt.subplots(1, 1)
-    visual_tsp_result(block_gdf, routes, ax)
-
-
-def plot_depot_effect(routes_b, routes_c, block_gdf):
-    fix, (ax1, ax2) = plt.subplots(1, 2)
-    visual_tsp_result(block_gdf, routes_b, ax1)
-    visual_tsp_result(block_gdf, routes_c, ax2)
-
-
-def visual_tsp_result(block_geodata, routes, ax, label=None):
-    colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-    cmap = ListedColormap(colors)
-
-    if block_geodata is not None:
-        block_geodata.plot(ax=ax, column=label, cmap=cmap, edgecolor='gray', alpha=0.6)
-
-    for idx, route in enumerate(routes):
-        x = []
-        y = []
-        for point in route:
-            x.append(point.x)
-            y.append(point.y)
-
-        ax.scatter(x, y, s=5)
-        ax.plot(x, y, color=colors[idx % len(colors)])
-
-    ax.set_axis_off()
+# plot_single_solution, plot_depot_effect, visual_tsp_result 函数已移至 tool/visualization.py
 
 
 def eval_depot_loc_effect(poi_gdf, block_gdf):
     routes_b, routes_c = depot_loc_center_vs_boundary(poi_gdf)
     plot_depot_effect(routes_b, routes_c, block_gdf)
-    plt.show()
 
 
 def create_depot_poi(poi_gdf, depot_type):
@@ -192,11 +124,11 @@ def create_depot_poi(poi_gdf, depot_type):
         return Point(0, ((xMax - xMin) * rd.random() + xMin), ((yMax - yMin) * rd.random() + yMin))
 
 
-def tsp_eval(shp_file, block_file):
-    poi_gdf, depot_poi_b = read_poi_data(shp_file)
+def tsp_eval(poi_shp_file, block_file):
+    poi_gdf, depot_poi_b = read_poi_data(poi_shp_file, return_depot=True)
     print(poi_gdf.columns)
 
-    block_gdf = read_block_data(block_file, ALL_POLYGON)
+    block_gdf = read_block_data(block_file, id=ALL_POLYGON)
     # poi_gdf = gpd.sjoin(poi_gdf_all, block_gdf, how='inner', predicate='intersects')
     fig, (ax1, ax2) = plt.subplots(1, 2)
     print('total demand = ' + str(poi_gdf['qty'].sum()))
@@ -204,14 +136,15 @@ def tsp_eval(shp_file, block_file):
     depot_poi = create_depot_poi(poi_gdf, depot_type=DepotLoc.RANDOM)
     routes1 = cal_solution(poi_gdf, depot_poi, 'cluster')
     visual_tsp_result(block_gdf, routes1, ax1, 'cluster')
-    plt.show()
+    import matplotlib.pyplot as plt
+    safe_show(plt)
     eval_kpi(routes1, poi_gdf)
 
 
 def poi_clustering_bkm(poi_shp, block_file, poi_cluster_shp, num_clusters, **kwargs):
     # 1. 读取shp文件
     gdf = gpd.read_file(poi_shp)
-    block_gdf = read_block_data(block_file, 'Id', 2)
+    block_gdf = read_block_data(block_file, filtered_col='Id', value=2)
     # 获取交集，主要是通过block对poi进行过滤
     poi_gdf_all = gpd.sjoin(gdf, block_gdf, how='inner', predicate='intersects')
     coords = [[geom.x, geom.y] for geom in poi_gdf_all.geometry]
@@ -505,136 +438,28 @@ class DistrictPartition:
 
     def visualize(self):
         # 划分结果可视化
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import ListedColormap
-        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        # 1. 绘制分区（block），按 label 着色
-        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-        cmap = ListedColormap(colors)
-        self.block_raw_gdf.plot(column='label', cmap=cmap, edgecolor='gray', alpha=0.6, ax=ax, label='')
-        print(f'处理后block总数为{len(self.block_raw_gdf)}')
-        # 2. 叠加 POI 点
-        if hasattr(self, 'poi_filted_gdf'):
-            self.poi_filted_gdf.plot(ax=ax, color='black', markersize=10, alpha=0.7)
-        # # 3. 叠加仓库点
-        # if self.warehouse_poi is not None:
-        #     ax.scatter(self.warehouse_poi.x, self.warehouse_poi.y, c='yellow', s=100, marker='*', edgecolors='black', label='Warehouse')
-        ax.set_title('District Partition Result')
-        ax.set_axis_off()
-        ax.legend()
-        plt.show()
+        poi_gdf = self.poi_filted_gdf if hasattr(self, 'poi_filted_gdf') else None
+        plot_district_partition(self.block_raw_gdf, poi_gdf, label_col='label')
 
     def plot_boundary_blocks_and_lines(self, ax=None):
         """
         绘制每个cluster的边界block（高亮显示）和边界线。
-        :param ax: 可选，matplotlib轴对象
+        :param ax: 可选，matplotlib轴对象（当前未使用，保留以兼容旧接口）
         """
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import ListedColormap
-        import numpy as np
-        from shapely.geometry import MultiPolygon, LineString
-
-        if ax is None:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-        cmap = ListedColormap(colors)
-        # 1. 绘制所有block，按label着色
-        self.block_raw_gdf.plot(column='label', cmap=cmap, edgecolor='gray', alpha=0.3, ax=ax)
-
-        # 2. 找到所有cluster的边界block
-        def is_boundary_block(idx, label):
-            block_geom = self.block_raw_gdf.at[idx, 'geometry']
-            # 只考虑边邻接（有公共边的block）
-            neighbors = self.block_raw_gdf[self.block_raw_gdf.index != idx]
-            # 用relate_pattern确保是边邻接
-            edge_neighbors = neighbors[neighbors.geometry.relate_pattern(block_geom, 'F***1****')]
-            for nidx, nrow in edge_neighbors.iterrows():
-                if nrow['label'] != label:
-                    return True
-            return False
-
-        cluster_blocks = {label: set(self.block_raw_gdf[self.block_raw_gdf['label'] == label].index)
-                          for label in self.block_raw_gdf['label'].dropna().unique()}
-        boundary_blocks = []
-        for label, blocks in cluster_blocks.items():
-            for idx in blocks:
-                if is_boundary_block(idx, label):
-                    boundary_blocks.append(idx)
-        # 3. 高亮边界block
-        boundary_gdf = self.block_raw_gdf.loc[boundary_blocks]
-        boundary_gdf.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=2, alpha=0.8, label='Boundary Block')
-
-        # 4. 绘制每个cluster的边界线
-        for label in cluster_blocks:
-            cluster_gdf = self.block_raw_gdf[self.block_raw_gdf['label'] == label]
-            # 合并为MultiPolygon
-            mp = cluster_gdf.geometry.union_all()
-            # 取外部边界
-            if mp.geom_type == 'Polygon':
-                lines = [LineString(mp.exterior.coords)]
-            elif mp.geom_type == 'MultiPolygon':
-                lines = [LineString(poly.exterior.coords) for poly in mp.geoms]
-            else:
-                continue
-            for line in lines:
-                ax.plot(*line.xy, color='k', linewidth=2, alpha=0.7)
-
-        ax.set_title('Boundary Blocks and Cluster Boundaries')
-        ax.set_axis_off()
-        ax.legend()
-        plt.show()
+        plot_boundary_blocks_and_lines(self.block_raw_gdf, label_col='label')
 
     def plot_swap_comparison(self, before_block_gdf=None):
         """
         绘制swap_block_unit调整前后的分区对比（两个子图，左为调整前，右为调整后）。
         :param before_block_gdf: 调整前的block_raw_gdf副本（GeoDataFrame）
         """
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import ListedColormap
-        from shapely.geometry import LineString
-        colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-        cmap = ListedColormap(colors)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
-        # --- 左图：调整前 ---
-        if before_block_gdf is not None:
-            before_block_gdf.plot(column='label', cmap=cmap, edgecolor='gray', alpha=0.3, ax=ax1)
-            # 绘制边界线
-            for label in before_block_gdf['label'].dropna().unique():
-                cluster_gdf = before_block_gdf[before_block_gdf['label'] == label]
-                mp = cluster_gdf.geometry.union_all()
-                if mp.geom_type == 'Polygon':
-                    lines = [LineString(mp.exterior.coords)]
-                elif mp.geom_type == 'MultiPolygon':
-                    lines = [LineString(poly.exterior.coords) for poly in mp.geoms]
-                else:
-                    continue
-                for line in lines:
-                    ax1.plot(*line.xy, color='k', linewidth=2, alpha=0.7)
-            ax1.set_title('Before swap_block_unit')
-            ax1.set_axis_off()
-        # --- 右图：调整后 ---
-        self.block_raw_gdf.plot(column='label', cmap=cmap, edgecolor='gray', alpha=0.3, ax=ax2)
-        for label in self.block_raw_gdf['label'].dropna().unique():
-            cluster_gdf = self.block_raw_gdf[self.block_raw_gdf['label'] == label]
-            mp = cluster_gdf.geometry.union_all()
-            if mp.geom_type == 'Polygon':
-                lines = [LineString(mp.exterior.coords)]
-            elif mp.geom_type == 'MultiPolygon':
-                lines = [LineString(poly.exterior.coords) for poly in mp.geoms]
-            else:
-                continue
-            for line in lines:
-                ax2.plot(*line.xy, color='k', linewidth=2, alpha=0.7)
-        ax2.set_title('After swap_block_unit')
-        ax2.set_axis_off()
-        plt.tight_layout()
-        plt.show()
+        plot_swap_comparison(before_block_gdf, self.block_raw_gdf, label_col='label')
 
 
 def run(poi_raw_file, block_raw_file, arg_dict):
     # step1. 数据预处理, 建立poi和block映射关系，剔除非配送点
     poi_raw_gpd = gpd.read_file(poi_raw_file)
-    block_raw_gpd = read_block_data(block_raw_file, -1)
+    block_raw_gpd = read_block_data(block_raw_file, id=ALL_POLYGON)
     print(f'block总数为{len(block_raw_gpd)}')
     dp = DistrictPartition(poi_raw_gpd, block_raw_gpd, **arg_dict)
     dp.solve()
@@ -645,10 +470,10 @@ def run(poi_raw_file, block_raw_file, arg_dict):
 
 
 if __name__ == '__main__':
-    poi_raw_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/poi_mct.shp'
-    block_raw_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/block_mct.shp'
-    poi_label_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/poi_labels.shp'
-    block_label_file = '/Users/chendi/IdeaProjects/regionOpt/data/shp/block_labels.shp'
+    poi_raw_file = '../data/shp/poi_mct.shp'
+    block_raw_file = '../data/shp/block_mct.shp'
+    poi_label_file = '../data/shp/poi_labels.shp'
+    block_label_file = '../data/shp/block_labels.shp'
 
     bkm_params = {
         "numClusters": 6,
@@ -671,8 +496,8 @@ if __name__ == '__main__':
 
     # poi_clustering_bkm(poi_raw_file, block_raw_file)
     #
-    # # km_clusters_rs = '/Users/chendi/IdeaProjects/regionOpt/data/shp/km_rs.shp'
-    # # bl_clusters_rs = '/Users/chendi/IdeaProjects/regionOpt/data/shp/bl_km_rs.shp'
+    # km_clusters_rs = '../data/shp/km_rs.shp'
+    # bl_clusters_rs = '../data/shp/bl_km_rs.shp'
     # tsp_eval(shp_file, block_file)
 
     print(0)
